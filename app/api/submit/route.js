@@ -1,6 +1,15 @@
 import { NextResponse } from 'next/server';
+import { fillTemplate, resolveTemplatePath } from './fillTemplate';
 
 export const runtime = 'nodejs';
+
+function safeSlug(value, fallback = 'alkeme-review') {
+  const slug = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || fallback;
+}
 
 export async function POST(request) {
   let body;
@@ -18,53 +27,40 @@ export async function POST(request) {
     );
   }
 
-  const record = {
-    receivedAt: new Date().toISOString(),
-    contact,
-    answers,
-  };
-
-  console.log('[alkeme-intake] submission', JSON.stringify(record));
-
-  const resendKey = process.env.RESEND_API_KEY;
-  const notifyEmail = process.env.NOTIFY_EMAIL;
-  if (resendKey && notifyEmail) {
-    try {
-      await sendViaResend({ apiKey: resendKey, to: notifyEmail, record });
-    } catch (err) {
-      console.error('[alkeme-intake] email send failed', err);
-    }
+  let buffer;
+  let report;
+  try {
+    const templatePath = resolveTemplatePath();
+    const result = await fillTemplate({ contact, answers, templatePath });
+    buffer = result.buffer;
+    report = result.report;
+  } catch (err) {
+    console.error('[alkeme-intake] template fill failed', err);
+    return NextResponse.json(
+      { error: 'Failed to generate filled questionnaire' },
+      { status: 500 },
+    );
   }
 
-  return NextResponse.json({ ok: true });
-}
-
-async function sendViaResend({ apiKey, to, record }) {
-  const lines = [];
-  lines.push(`New ALKEME Business Review submission`);
-  lines.push('');
-  lines.push(`Company: ${record.contact.companyName}`);
-  lines.push(`Contact: ${record.contact.contactName} (${record.contact.email})`);
-  lines.push(`Received: ${record.receivedAt}`);
-  lines.push('');
-  lines.push(JSON.stringify(record, null, 2));
-
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: 'ALKEME Intake <onboarding@resend.dev>',
-      to: [to],
-      subject: `New Business Review: ${record.contact.companyName}`,
-      text: lines.join('\n'),
+  console.log(
+    '[alkeme-intake] submission',
+    JSON.stringify({
+      receivedAt: new Date().toISOString(),
+      company: contact.companyName,
+      contact: contact.contactName,
+      email: contact.email,
+      report,
     }),
-  });
+  );
 
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Resend ${res.status}: ${t}`);
-  }
+  const filename = `${safeSlug(contact.companyName)}-business-review.docx`;
+  return new Response(buffer, {
+    headers: {
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': String(buffer.length),
+      'X-Alkeme-Report': JSON.stringify(report),
+    },
+  });
 }

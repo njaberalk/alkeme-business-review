@@ -14,16 +14,15 @@ npm run dev
 
 ## Submission handling
 
-Submissions `POST` to `/api/submit`. Out of the box the API logs the full payload to the server console and returns `{ ok: true }`.
+Submissions `POST` to `/api/submit`. The route:
 
-To forward submissions by email, set these env vars (e.g. in Vercel project settings):
+1. Reads `templates/business-review.docx` (the original ALKEME questionnaire).
+2. Injects the submitted contact info into the contact-block textboxes and each answer paragraph after its matching question.
+3. Returns the filled `.docx` as a binary download (`Content-Disposition: attachment`).
 
-| Var | Purpose |
-| --- | --- |
-| `RESEND_API_KEY` | [Resend](https://resend.com) API key |
-| `NOTIFY_EMAIL` | Destination address (e.g. your advisor inbox) |
+The client saves it via `createObjectURL` and offers a **Download filled questionnaire** button on the success screen.
 
-When set, each submission is emailed to `NOTIFY_EMAIL` with the full JSON payload.
+Email forwarding is not yet wired — the tech team will layer that on top of the same endpoint later.
 
 ## Deploy
 

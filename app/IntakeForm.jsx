@@ -25,6 +25,8 @@ export default function IntakeForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+  const [downloadUrl, setDownloadUrl] = useState(null);
+  const [downloadName, setDownloadName] = useState('alkeme-business-review.docx');
 
   const totalSteps = SECTIONS.length + 2; // contact + sections + review
   const progressPct = Math.round(((step) / (totalSteps - 1)) * 100);
@@ -84,11 +86,16 @@ export default function IntakeForm() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('Request failed');
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      if (match) setDownloadName(match[1]);
+      setDownloadUrl(URL.createObjectURL(blob));
       setSubmitted(true);
       if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
       setSubmitError(
-        'Something went wrong submitting your response. Please try again, or email your advisor directly.',
+        'Something went wrong generating your filled questionnaire. Please try again.',
       );
     } finally {
       setSubmitting(false);
@@ -96,7 +103,14 @@ export default function IntakeForm() {
   }
 
   if (submitted) {
-    return <SuccessView contact={contact} answers={answers} />;
+    return (
+      <SuccessView
+        contact={contact}
+        answers={answers}
+        downloadUrl={downloadUrl}
+        downloadName={downloadName}
+      />
+    );
   }
 
   return (
@@ -380,25 +394,15 @@ function ReviewStep({ contact, answers, submitError }) {
   );
 }
 
-function SuccessView({ contact, answers }) {
-  function handlePrint() {
-    if (typeof window !== 'undefined') window.print();
-  }
-
+function SuccessView({ contact, downloadUrl, downloadName }) {
   function handleDownload() {
-    const payload = { contact, answers, submittedAt: new Date().toISOString() };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
+    if (!downloadUrl) return;
     const a = document.createElement('a');
-    a.href = url;
-    const name = (contact.companyName || 'alkeme-review')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-');
-    a.download = `${name}-business-review.json`;
+    a.href = downloadUrl;
+    a.download = downloadName;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
   }
 
   return (
@@ -420,17 +424,22 @@ function SuccessView({ contact, answers }) {
             Thank you, {contact.contactName?.split(' ')[0] || 'there'}.
           </h2>
           <p className="success-body">
-            Your ALKEME advisor has received your review for <strong>{contact.companyName}</strong>.
-            We&apos;ll be in touch within one business day to walk through your personalized recommendations.
+            Your responses for <strong>{contact.companyName}</strong> have been filled into the
+            ALKEME Business Review Questionnaire. Download the completed Word document below and
+            send it along to your ALKEME advisor.
           </p>
           <div className="success-actions">
-            <button className="btn is-ghost" onClick={handlePrint}>
-              Print a copy
-            </button>
-            <button className="btn" onClick={handleDownload}>
-              Download JSON
+            <button
+              className="btn"
+              onClick={handleDownload}
+              disabled={!downloadUrl}
+            >
+              Download filled questionnaire
             </button>
           </div>
+          <p style={{ marginTop: '1.5rem', fontSize: '0.82rem', color: '#6b7684' }}>
+            File: <code>{downloadName}</code>
+          </p>
         </div>
       </main>
       <footer className="site-footer">
