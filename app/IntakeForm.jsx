@@ -25,8 +25,10 @@ export default function IntakeForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState(null);
-  const [downloadUrl, setDownloadUrl] = useState(null);
-  const [downloadName, setDownloadName] = useState('alkeme-business-review.docx');
+  const [docxUrl, setDocxUrl] = useState(null);
+  const [docxName, setDocxName] = useState('alkeme-business-review.docx');
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [pdfName, setPdfName] = useState('alkeme-business-review.pdf');
 
   const totalSteps = SECTIONS.length + 2; // contact + sections + review
   const progressPct = Math.round(((step) / (totalSteps - 1)) * 100);
@@ -80,17 +82,32 @@ export default function IntakeForm() {
     setSubmitError(null);
     try {
       const payload = { contact, answers, submittedAt: new Date().toISOString() };
-      const res = await fetch('/api/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error('Request failed');
-      const blob = await res.blob();
-      const disposition = res.headers.get('Content-Disposition') || '';
-      const match = disposition.match(/filename="?([^";]+)"?/i);
-      if (match) setDownloadName(match[1]);
-      setDownloadUrl(URL.createObjectURL(blob));
+      const post = (path) =>
+        fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      const [docxRes, pdfRes] = await Promise.all([
+        post('/api/submit'),
+        post('/api/submit-pdf'),
+      ]);
+      if (!docxRes.ok) throw new Error('Word document generation failed');
+      if (!pdfRes.ok) throw new Error('PDF generation failed');
+
+      const [docxBlob, pdfBlob] = await Promise.all([
+        docxRes.blob(),
+        pdfRes.blob(),
+      ]);
+      const extractName = (res, fallback) => {
+        const disp = res.headers.get('Content-Disposition') || '';
+        const m = disp.match(/filename="?([^";]+)"?/i);
+        return m ? m[1] : fallback;
+      };
+      setDocxName(extractName(docxRes, docxName));
+      setPdfName(extractName(pdfRes, pdfName));
+      setDocxUrl(URL.createObjectURL(docxBlob));
+      setPdfUrl(URL.createObjectURL(pdfBlob));
       setSubmitted(true);
       if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
@@ -107,8 +124,10 @@ export default function IntakeForm() {
       <SuccessView
         contact={contact}
         answers={answers}
-        downloadUrl={downloadUrl}
-        downloadName={downloadName}
+        docxUrl={docxUrl}
+        docxName={docxName}
+        pdfUrl={pdfUrl}
+        pdfName={pdfName}
       />
     );
   }
@@ -394,12 +413,12 @@ function ReviewStep({ contact, answers, submitError }) {
   );
 }
 
-function SuccessView({ contact, downloadUrl, downloadName }) {
-  function handleDownload() {
-    if (!downloadUrl) return;
+function SuccessView({ contact, docxUrl, docxName, pdfUrl, pdfName }) {
+  function triggerDownload(url, name) {
+    if (!url) return;
     const a = document.createElement('a');
-    a.href = downloadUrl;
-    a.download = downloadName;
+    a.href = url;
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -425,20 +444,27 @@ function SuccessView({ contact, downloadUrl, downloadName }) {
           </h2>
           <p className="success-body">
             Your responses for <strong>{contact.companyName}</strong> have been filled into the
-            ALKEME Business Review Questionnaire. Download the completed Word document below and
-            send it along to your ALKEME advisor.
+            ALKEME Business Review Questionnaire. Download the completed file below — Word for
+            easy edits, PDF for sharing as-is.
           </p>
           <div className="success-actions">
             <button
               className="btn"
-              onClick={handleDownload}
-              disabled={!downloadUrl}
+              onClick={() => triggerDownload(docxUrl, docxName)}
+              disabled={!docxUrl}
             >
-              Download filled questionnaire
+              Download Word (.docx)
+            </button>
+            <button
+              className="btn is-ghost"
+              onClick={() => triggerDownload(pdfUrl, pdfName)}
+              disabled={!pdfUrl}
+            >
+              Download PDF
             </button>
           </div>
           <p style={{ marginTop: '1.5rem', fontSize: '0.82rem', color: '#6b7684' }}>
-            File: <code>{downloadName}</code>
+            <code>{docxName}</code> · <code>{pdfName}</code>
           </p>
         </div>
       </main>

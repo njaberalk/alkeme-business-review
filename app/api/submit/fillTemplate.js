@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const QUESTION_MATCHERS = [
@@ -171,5 +172,13 @@ export async function fillTemplate({ contact, answers, templatePath }) {
 }
 
 export function resolveTemplatePath() {
-  return path.join(process.cwd(), 'templates', 'business-review.docx');
+  // Prefer a path relative to this source file so the route works regardless
+  // of the process cwd (Vercel serverless, Node server, Docker, etc.).
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const viaSource = path.resolve(here, '..', '..', '..', 'templates', 'business-review.docx');
+    return viaSource;
+  } catch {
+    return path.join(process.cwd(), 'templates', 'business-review.docx');
+  }
 }
